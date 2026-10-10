@@ -240,79 +240,186 @@ function shouldIgnoreUrl(url) {
 // Restaurar abas
 // =================
 
-async function restoreTabs(
-
+async function restoreSingleWindow(
   tabs,
   incognito = false
 ) {
+  // Recupera a ordem original.
+  const sortedTabs = [...tabs].sort(
+    (a, b) =>
+      (Number(a.index) || 0) -
+      (Number(b.index) || 0)
+  );
 
-  const validTabs =
-    tabs.filter(
-      tab =>
-        !shouldIgnoreUrl(tab.url)
-    );
-
-  if (
-    validTabs.length === 0
-  ) {
-
-    throw new Error(
-      "Nenhuma URL válida encontrada."
-    );
-
+  if (sortedTabs.length === 0) {
+    return 0;
   }
 
-  const firstTab =
-    validTabs[0];
+  // Criamos a janela usando a primeira aba.
+  const firstTabData = sortedTabs[0];
 
   const newWindow =
     await chrome.windows.create({
-
-      url: firstTab.url,
-
+      url: firstTabData.url,
       incognito
-
     });
 
-  const windowId =
+  const newWindowId =
     newWindow.id;
 
+  const createdTabs = [];
+
+  // A primeira aba já foi criada junto com a janela.
+  const firstCreatedTab =
+    newWindow.tabs?.[0];
+
+  if (firstCreatedTab) {
+    createdTabs.push({
+      original: firstTabData,
+      created: firstCreatedTab
+    });
+  }
+
+  // Cria as demais abas na ordem original.
   for (
     let i = 1;
-    i < validTabs.length;
+    i < sortedTabs.length;
     i++
   ) {
-
-    const tab =
-      validTabs[i];
+    const originalTab =
+      sortedTabs[i];
 
     try {
+      const createdTab =
+        await chrome.tabs.create({
+          windowId: newWindowId,
+          url: originalTab.url,
+          active: false
+        });
 
-      await chrome.tabs.create({
-
-        windowId,
-
-        url: tab.url,
-
-        active: false,
-
-        pinned:
-          tab.pinned || false
-
+      createdTabs.push({
+        original: originalTab,
+        created: createdTab
       });
 
     } catch (error) {
-
       console.error(
-        `Não foi possível restaurar: ${tab.url}`,
+        `Não foi possível restaurar: ${originalTab.url}`,
         error
       );
-
     }
-
   }
 
-  return validTabs.length;
+  // =========================
+  // RESTAURA ABAS FIXADAS
+  // =========================
+
+  for (const item of createdTabs) {
+    if (item.original.pinned) {
+      try {
+        await chrome.tabs.update(
+          item.created.id,
+          {
+            pinned: true
+          }
+        );
+      } catch (error) {
+        console.error(
+          "Erro ao fixar aba:",
+          item.original.url,
+          error
+        );
+      }
+    }
+  }
+
+  // =========================
+  // RESTAURA ABA ATIVA
+  // =========================
+
+  const activeItem =
+    createdTabs.find(
+      item => item.original.active
+    );
+
+  if (activeItem) {
+    try {
+      await chrome.tabs.update(
+        activeItem.created.id,
+        {
+          active: true
+        }
+      );
+    } catch (error) {
+      console.error(
+        "Erro ao ativar aba:",
+        error
+      );
+    }
+  }
+
+  return createdTabs.length;
+}
+
+async function restoreTabs(tabs, incognito = false) {
+  const validTabs = tabs.filter(
+    tab => !shouldIgnoreUrl(tab.url)
+  );
+
+  if (validTabs.length === 0) {
+    throw new Error(
+      "Nenhuma URL válida encontrada."
+    );
+  }
+
+  // Verifica se o backup possui informações reais de janela.
+  const hasWindowInfo = validTabs.some(
+    tab =>
+      tab.windowId !== null &&
+      tab.windowId !== undefined
+  );
+
+  // TXT antigo: não sabemos em quais janelas as abas estavam.
+  // Nesse caso, restauramos tudo em uma única janela.
+  if (!hasWindowInfo) {
+    return await restoreSingleWindow(
+      validTabs,
+      incognito
+    );
+  }
+
+  // Agrupa abas pelo windowId original.
+  const windowsMap = new Map();
+
+  for (const tab of validTabs) {
+    const originalWindowId = tab.windowId;
+
+    if (!windowsMap.has(originalWindowId)) {
+      windowsMap.set(
+        originalWindowId,
+        []
+      );
+    }
+
+    windowsMap
+      .get(originalWindowId)
+      .push(tab);
+  }
+
+  let restoredCount = 0;
+
+  // Cria uma nova janela para cada windowId original.
+  for (const [, windowTabs] of windowsMap) {
+    const count =
+      await restoreSingleWindow(
+        windowTabs,
+        incognito
+      );
+
+    restoredCount += count;
+  }
+
+  return restoredCount;
 }
 
 document
