@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Export Chrome Tabs",
+  "version": "1.0.0",
+  "description": "Exporta as abas abertas do Chrome para TXT, CSV ou JSON.",
+  "permissions": ["tabs", "downloads"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Exportar abas"
+  }
+}

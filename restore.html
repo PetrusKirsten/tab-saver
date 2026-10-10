@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+
+  <title>Restaurar abas</title>
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+
+      max-width: 600px;
+
+      margin: 40px auto;
+
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 30px;
+    }
+
+    input,
+    button {
+      margin: 10px 0;
+    }
+
+    button {
+      padding: 10px 18px;
+      cursor: pointer;
+    }
+
+    #status {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Restaurar abas</h1>
+
+  <p>
+    Selecione um backup TXT, CSV ou JSON.
+  </p>
+
+  <input
+    type="file"
+    id="backupFile"
+    accept=".txt,.csv,.json"
+  >
+
+  <br>
+
+  <label>
+    <input
+      type="checkbox"
+      id="incognito"
+    >
+
+    Abrir em janela anônima
+  </label>
+
+  <br>
+
+  <button id="restore">
+    Restaurar abas
+  </button>
+
+  <div id="status"></div>
+
+  <script src="restore.js"></script>
+
+</body>
+
+</html>
