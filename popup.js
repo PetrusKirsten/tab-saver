@@ -1,5 +1,13 @@
-async function getTabs() {
-  const tabs = await chrome.tabs.query({});
+async function getTabs(scope = "current") {
+  let tabs;
+
+  if (scope === "current") {
+    tabs = await chrome.tabs.query({
+      currentWindow: true
+    });
+  } else {
+    tabs = await chrome.tabs.query({});
+  }
 
   return tabs.map((tab, index) => ({
     exportIndex: index + 1,
@@ -12,6 +20,14 @@ async function getTabs() {
     active: tab.active ?? false,
     groupId: tab.groupId ?? -1
   }));
+}
+
+function getSelectedScope() {
+  const selected = document.querySelector(
+    'input[name="scope"]:checked'
+  );
+
+  return selected?.value || "current";
 }
 
 function timestamp() {
@@ -48,7 +64,8 @@ function escapeCSV(value) {
 
 document.getElementById("txt").addEventListener("click", async () => {
   try {
-    const tabs = await getTabs();
+    const scope = getSelectedScope();
+    const tabs = await getTabs(scope);
 
     const content = tabs
       .map((tab) => {
@@ -83,7 +100,8 @@ document.getElementById("txt").addEventListener("click", async () => {
 
 document.getElementById("csv").addEventListener("click", async () => {
   try {
-    const tabs = await getTabs();
+    const scope = getSelectedScope();
+    const tabs = await getTabs(scope);
 
     const rows = [
       [
@@ -136,10 +154,12 @@ document.getElementById("csv").addEventListener("click", async () => {
 
 document.getElementById("json").addEventListener("click", async () => {
   try {
-    const tabs = await getTabs();
+    const scope = getSelectedScope();
+    const tabs = await getTabs(scope);
 
     const backup = {
       exportedAt: new Date().toISOString(),
+      scope,
       tabCount: tabs.length,
       windowCount: new Set(
         tabs.map((tab) => tab.windowId)
