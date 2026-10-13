@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Export Chrome Tabs",
-  "version": "1.0.0",
-  "description": "Exporta as abas abertas do Chrome para TXT, CSV ou JSON.",
+  "name": "Tab Saver",
+  "version": "0.2.0",
+  "description": "Save, export and restore Chrome tab sessions.",
   "permissions": ["tabs", "downloads"],
   "action": {
     "default_popup": "popup.html",
