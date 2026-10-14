@@ -19,6 +19,8 @@ A lightweight Chrome extension for saving, exporting and restoring tab sessions.
 - [ ] Named tab layouts
 - [ ] Session presets
 - [ ] Stable v1.0.0 release
+- [ ] Custom nice layout/style
+- [ ] Multiples languages support (or at least EN rather than only PT-BR)
 
 ## Status
 
