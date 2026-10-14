@@ -3,7 +3,11 @@
   "name": "Tab Saver",
   "version": "0.2.0",
   "description": "Save, export and restore Chrome tab sessions.",
-  "permissions": ["tabs", "downloads"],
+  "permissions": [
+    "tabs", 
+    "downloads",
+    "storage"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Exportar abas"

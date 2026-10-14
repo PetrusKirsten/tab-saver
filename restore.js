@@ -1,74 +1,476 @@
+const DEFAULT_IGNORE_HOSTS = [
+  "web.whatsapp.com"
+];
+
+
+// ========================================
+// Utilidades gerais
+// ========================================
+
 function setStatus(message) {
-  document.getElementById("status").textContent =
-    message;
+  document
+    .getElementById("status")
+    .textContent = message;
 }
 
-// ==========
-// TXT
-// ==========
 
-function parseTXT(content) {
-  const blocks = content
-    .trim()
-    .split(/\n\s*\n/);
+function parseNumber(
+  value,
+  fallback = null
+) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return fallback;
+  }
 
-  return blocks
-    .map((block, index) => {
+  const number =
+    Number(value);
 
-      const lines = block
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean);
-
-      if (lines.length < 2) {
-        return null;
-      }
-
-      const title = lines[0]
-        .replace(/^\d+\.\s*/, "");
-
-      const url = lines[1];
-
-      return {
-        title,
-        url,
-        windowId: null,
-        index,
-        pinned: false,
-        active: false,
-        groupId: -1
-      };
-
-    })
-
-    .filter(tab =>
-      tab && tab.url
-    );
+  return Number.isFinite(number)
+    ? number
+    : fallback;
 }
 
-// =============
-// JSON
-// =============
 
-function parseJSON(content) {
-  const data = JSON.parse(content);
-
-  if (Array.isArray(data)) {
-    return data;
+function parseBoolean(
+  value,
+  fallback = false
+) {
+  if (typeof value === "boolean") {
+    return value;
   }
 
-  if (Array.isArray(data.tabs)) {
-    return data.tabs;
+  if (value === undefined) {
+    return fallback;
   }
 
-  throw new Error(
-    "JSON não contém uma lista de abas."
+  return (
+    String(value)
+      .toLowerCase() === "true"
   );
 }
 
-// =============
+
+// ========================================
+// Ignore list
+// ========================================
+
+async function getIgnoreHosts() {
+  const result =
+    await chrome.storage.local.get(
+      "ignoreHosts"
+    );
+
+  if (!Array.isArray(result.ignoreHosts)) {
+    await chrome.storage.local.set({
+      ignoreHosts:
+        DEFAULT_IGNORE_HOSTS
+    });
+
+    return [
+      ...DEFAULT_IGNORE_HOSTS
+    ];
+  }
+
+  return result.ignoreHosts;
+}
+
+
+async function saveIgnoreHosts(hosts) {
+  await chrome.storage.local.set({
+    ignoreHosts: hosts
+  });
+}
+
+
+function normalizeHost(value) {
+  let input =
+    value
+      .trim()
+      .toLowerCase();
+
+  if (!input) {
+    return null;
+  }
+
+  try {
+    if (!input.includes("://")) {
+      input =
+        `https://${input}`;
+    }
+
+    const url =
+      new URL(input);
+
+    return url.hostname
+      .replace(/^www\./, "");
+
+  } catch {
+    return null;
+  }
+}
+
+
+function shouldIgnoreUrl(
+  url,
+  ignoreHosts
+) {
+  if (!url) {
+    return true;
+  }
+
+  if (
+    url.startsWith("chrome://") ||
+    url.startsWith("chrome-extension://")
+  ) {
+    return true;
+  }
+
+  try {
+    const parsed =
+      new URL(url);
+
+    const hostname =
+      parsed.hostname
+        .toLowerCase()
+        .replace(/^www\./, "");
+
+    return ignoreHosts.some(
+      (ignoreHost) => {
+        const normalized =
+          ignoreHost
+            .toLowerCase()
+            .replace(/^www\./, "");
+
+        return (
+          hostname === normalized ||
+          hostname.endsWith(
+            `.${normalized}`
+          )
+        );
+      }
+    );
+
+  } catch {
+    return true;
+  }
+}
+
+
+async function renderIgnoreList() {
+  const list =
+    document.getElementById(
+      "ignoreList"
+    );
+
+  const hosts =
+    await getIgnoreHosts();
+
+  list.innerHTML = "";
+
+  for (const host of hosts) {
+    const item =
+      document.createElement("li");
+
+    const text =
+      document.createElement("span");
+
+    text.textContent = host;
+
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.textContent =
+      "Remover";
+
+    button.addEventListener(
+      "click",
+      async () => {
+        const current =
+          await getIgnoreHosts();
+
+        const updated =
+          current.filter(
+            (item) =>
+              item !== host
+          );
+
+        await saveIgnoreHosts(
+          updated
+        );
+
+        await renderIgnoreList();
+
+        setStatus(
+          `${host} removido da lista.`
+        );
+      }
+    );
+
+    item.appendChild(text);
+
+    item.appendChild(
+      document.createTextNode(" ")
+    );
+
+    item.appendChild(button);
+
+    list.appendChild(item);
+  }
+}
+
+
+async function addIgnoreHost() {
+  const input =
+    document.getElementById(
+      "ignoreInput"
+    );
+
+  const host =
+    normalizeHost(
+      input.value
+    );
+
+  if (!host) {
+    setStatus(
+      "Digite um domínio válido."
+    );
+
+    return;
+  }
+
+  const hosts =
+    await getIgnoreHosts();
+
+  if (hosts.includes(host)) {
+    setStatus(
+      `${host} já está na lista.`
+    );
+
+    return;
+  }
+
+  hosts.push(host);
+  hosts.sort();
+
+  await saveIgnoreHosts(
+    hosts
+  );
+
+  input.value = "";
+
+  await renderIgnoreList();
+
+  setStatus(
+    `${host} adicionado à lista.`
+  );
+}
+
+
+// ========================================
+// Normalização de abas importadas
+// ========================================
+
+function normalizeTab(
+  tab,
+  fallbackIndex = 0
+) {
+  return {
+    title:
+      String(
+        tab?.title ?? ""
+      ),
+
+    url:
+      String(
+        tab?.url ?? ""
+      ),
+
+    windowId:
+      parseNumber(
+        tab?.windowId,
+        null
+      ),
+
+    index:
+      parseNumber(
+        tab?.index,
+        fallbackIndex
+      ),
+
+    pinned:
+      parseBoolean(
+        tab?.pinned
+      ),
+
+    active:
+      parseBoolean(
+        tab?.active
+      ),
+
+    groupId:
+      parseNumber(
+        tab?.groupId,
+        -1
+      )
+  };
+}
+
+
+// ========================================
+// TXT
+// ========================================
+
+function parseTXT(content) {
+  const blocks =
+    content
+      .trim()
+      .split(/\n\s*\n/);
+
+  return blocks
+    .map(
+      (block, fallbackIndex) => {
+        const lines =
+          block
+            .split(/\r?\n/)
+            .map(
+              (line) =>
+                line.trim()
+            )
+            .filter(Boolean);
+
+        if (lines.length < 2) {
+          return null;
+        }
+
+        const title =
+          lines[0]
+            .replace(
+              /^\d+\.\s*/,
+              ""
+            );
+
+        const url =
+          lines[1];
+
+        const metadata = {};
+
+        /*
+         * Permite ler tanto:
+         *
+         * TXT antigo:
+         *   título
+         *   URL
+         *
+         * quanto TXT novo:
+         *   título
+         *   URL
+         *   windowId: ...
+         *   index: ...
+         *   pinned: ...
+         *   active: ...
+         *   groupId: ...
+         */
+        for (
+          const line
+          of lines.slice(2)
+        ) {
+          const separator =
+            line.indexOf(":");
+
+          if (separator === -1) {
+            continue;
+          }
+
+          const key =
+            line
+              .slice(
+                0,
+                separator
+              )
+              .trim();
+
+          const value =
+            line
+              .slice(
+                separator + 1
+              )
+              .trim();
+
+          metadata[key] =
+            value;
+        }
+
+        return normalizeTab(
+          {
+            title,
+            url,
+
+            windowId:
+              metadata.windowId,
+
+            index:
+              metadata.index,
+
+            pinned:
+              metadata.pinned,
+
+            active:
+              metadata.active,
+
+            groupId:
+              metadata.groupId
+          },
+
+          fallbackIndex
+        );
+      }
+    )
+    .filter(
+      (tab) =>
+        tab &&
+        tab.url
+    );
+}
+
+
+// ========================================
+// JSON
+// ========================================
+
+function parseJSON(content) {
+  const data =
+    JSON.parse(content);
+
+  const tabs =
+    Array.isArray(data)
+      ? data
+      : data.tabs;
+
+  if (!Array.isArray(tabs)) {
+    throw new Error(
+      "JSON não contém uma lista de abas."
+    );
+  }
+
+  return tabs.map(
+    (tab, index) =>
+      normalizeTab(
+        tab,
+        index
+      )
+  );
+}
+
+
+// ========================================
 // CSV
-// =============
+// ========================================
 
 function parseCSVLine(line) {
   const result = [];
@@ -76,40 +478,35 @@ function parseCSVLine(line) {
   let value = "";
   let insideQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-
-    const char = line[i];
+  for (
+    let i = 0;
+    i < line.length;
+    i++
+  ) {
+    const char =
+      line[i];
 
     if (char === '"') {
-
       if (
         insideQuotes &&
         line[i + 1] === '"'
       ) {
-
         value += '"';
         i++;
-
       } else {
-
         insideQuotes =
           !insideQuotes;
-
       }
 
     } else if (
       char === "," &&
       !insideQuotes
     ) {
-
       result.push(value);
-
       value = "";
 
     } else {
-
       value += char;
-
     }
   }
 
@@ -118,64 +515,63 @@ function parseCSVLine(line) {
   return result;
 }
 
+
 function parseCSV(content) {
-  content =
-    content.replace(/^\uFEFF/, "");
-
-  const lines = content
-    .trim()
-    .split(/\r?\n/);
-
-  const headers =
-    parseCSVLine(lines[0]);
-
-  return lines.slice(1).map(line => {
-
-    const values =
-      parseCSVLine(line);
-
-    const row = {};
-
-    headers.forEach(
-      (header, index) => {
-
-        row[header] =
-          values[index];
-
-      }
+  const cleanContent =
+    content.replace(
+      /^\uFEFF/,
+      ""
     );
 
-    return {
-      title: row.title || "",
-      url: row.url || "",
+  const lines =
+    cleanContent
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean);
 
-      windowId:
-        row.windowId
-          ? Number(row.windowId)
-          : null,
+  if (lines.length < 2) {
+    return [];
+  }
 
-      index:
-        Number(row.index) || 0,
+  const headers =
+    parseCSVLine(
+      lines[0]
+    );
 
-      pinned:
-        row.pinned === "true",
+  return lines
+    .slice(1)
+    .map(
+      (line, index) => {
+        const values =
+          parseCSVLine(line);
 
-      active:
-        row.active === "true",
+        const row = {};
 
-      groupId:
-        Number(row.groupId) || -1
-    };
+        headers.forEach(
+          (header, column) => {
+            row[header] =
+              values[column];
+          }
+        );
 
-  });
+        return normalizeTab(
+          row,
+          index
+        );
+      }
+    )
+    .filter(
+      (tab) =>
+        tab.url
+    );
 }
 
-// ==================
+
+// ========================================
 // Leitor universal
-// ==================
+// ========================================
 
 async function readBackupFile(file) {
-
   const content =
     await file.text();
 
@@ -186,7 +582,6 @@ async function readBackupFile(file) {
       .toLowerCase();
 
   switch (extension) {
-
     case "txt":
       return parseTXT(content);
 
@@ -203,64 +598,36 @@ async function readBackupFile(file) {
   }
 }
 
-// ==================
-// URLs para ignorar
-// ==================
 
-function shouldIgnoreUrl(url) {
-
-  if (!url) {
-    return true;
-  }
-
-  if (url.startsWith("chrome://")) {
-    return true;
-  }
-
-  try {
-
-    const parsed =
-      new URL(url);
-
-    if (
-      parsed.hostname ===
-      "web.whatsapp.com"
-    ) {
-      return true;
-    }
-
-  } catch {
-    return true;
-  }
-
-  return false;
-}
-
-// =================
-// Restaurar abas
-// =================
+// ========================================
+// Restauração
+// ========================================
 
 async function restoreSingleWindow(
   tabs,
   incognito = false
 ) {
-  // Recupera a ordem original.
-  const sortedTabs = [...tabs].sort(
-    (a, b) =>
-      (Number(a.index) || 0) -
-      (Number(b.index) || 0)
-  );
+  const sortedTabs =
+    [...tabs].sort(
+      (a, b) =>
+        a.index -
+        b.index
+    );
 
-  if (sortedTabs.length === 0) {
+  if (
+    sortedTabs.length === 0
+  ) {
     return 0;
   }
 
-  // Criamos a janela usando a primeira aba.
-  const firstTabData = sortedTabs[0];
+  const firstTabData =
+    sortedTabs[0];
 
   const newWindow =
     await chrome.windows.create({
-      url: firstTabData.url,
+      url:
+        firstTabData.url,
+
       incognito
     });
 
@@ -269,18 +636,22 @@ async function restoreSingleWindow(
 
   const createdTabs = [];
 
-  // A primeira aba já foi criada junto com a janela.
+  // windows.create() já cria a primeira aba.
   const firstCreatedTab =
     newWindow.tabs?.[0];
 
   if (firstCreatedTab) {
     createdTabs.push({
-      original: firstTabData,
-      created: firstCreatedTab
+      original:
+        firstTabData,
+
+      created:
+        firstCreatedTab
     });
   }
 
-  // Cria as demais abas na ordem original.
+
+  // Demais abas.
   for (
     let i = 1;
     i < sortedTabs.length;
@@ -292,14 +663,21 @@ async function restoreSingleWindow(
     try {
       const createdTab =
         await chrome.tabs.create({
-          windowId: newWindowId,
-          url: originalTab.url,
+          windowId:
+            newWindowId,
+
+          url:
+            originalTab.url,
+
           active: false
         });
 
       createdTabs.push({
-        original: originalTab,
-        created: createdTab
+        original:
+          originalTab,
+
+        created:
+          createdTab
       });
 
     } catch (error) {
@@ -310,36 +688,41 @@ async function restoreSingleWindow(
     }
   }
 
-  // =========================
-  // RESTAURA ABAS FIXADAS
-  // =========================
 
-  for (const item of createdTabs) {
-    if (item.original.pinned) {
-      try {
-        await chrome.tabs.update(
-          item.created.id,
-          {
-            pinned: true
-          }
-        );
-      } catch (error) {
-        console.error(
-          "Erro ao fixar aba:",
-          item.original.url,
-          error
-        );
-      }
+  // Restaura abas fixadas.
+  for (
+    const item
+    of createdTabs
+  ) {
+    if (
+      !item.original.pinned
+    ) {
+      continue;
+    }
+
+    try {
+      await chrome.tabs.update(
+        item.created.id,
+        {
+          pinned: true
+        }
+      );
+
+    } catch (error) {
+      console.error(
+        "Erro ao fixar aba:",
+        item.original.url,
+        error
+      );
     }
   }
 
-  // =========================
-  // RESTAURA ABA ATIVA
-  // =========================
 
+  // Restaura a aba ativa original.
   const activeItem =
     createdTabs.find(
-      item => item.original.active
+      (item) =>
+        item.original.active
     );
 
   if (activeItem) {
@@ -350,6 +733,7 @@ async function restoreSingleWindow(
           active: true
         }
       );
+
     } catch (error) {
       console.error(
         "Erro ao ativar aba:",
@@ -361,40 +745,74 @@ async function restoreSingleWindow(
   return createdTabs.length;
 }
 
-async function restoreTabs(tabs, incognito = false) {
-  const validTabs = tabs.filter(
-    tab => !shouldIgnoreUrl(tab.url)
-  );
 
-  if (validTabs.length === 0) {
+async function restoreTabs(
+  tabs,
+  incognito = false
+) {
+  // Carregamos a configuração apenas uma vez.
+  const ignoreHosts =
+    await getIgnoreHosts();
+
+  const validTabs =
+    tabs.filter(
+      (tab) =>
+        !shouldIgnoreUrl(
+          tab.url,
+          ignoreHosts
+        )
+    );
+
+  if (
+    validTabs.length === 0
+  ) {
     throw new Error(
       "Nenhuma URL válida encontrada."
     );
   }
 
-  // Verifica se o backup possui informações reais de janela.
-  const hasWindowInfo = validTabs.some(
-    tab =>
-      tab.windowId !== null &&
-      tab.windowId !== undefined
-  );
 
-  // TXT antigo: não sabemos em quais janelas as abas estavam.
-  // Nesse caso, restauramos tudo em uma única janela.
+  /*
+   * Backups TXT antigos não possuem windowId.
+   * Nesse caso, todas as abas são restauradas
+   * em uma única janela.
+   */
+  const hasWindowInfo =
+    validTabs.some(
+      (tab) =>
+        tab.windowId !== null &&
+        tab.windowId !== undefined
+    );
+
   if (!hasWindowInfo) {
-    return await restoreSingleWindow(
+    return restoreSingleWindow(
       validTabs,
       incognito
     );
   }
 
-  // Agrupa abas pelo windowId original.
-  const windowsMap = new Map();
 
-  for (const tab of validTabs) {
-    const originalWindowId = tab.windowId;
+  /*
+   * windowId antigo não é reutilizado.
+   *
+   * Ele serve apenas para identificar quais
+   * abas pertenciam à mesma janela.
+   */
+  const windowsMap =
+    new Map();
 
-    if (!windowsMap.has(originalWindowId)) {
+  for (
+    const tab
+    of validTabs
+  ) {
+    const originalWindowId =
+      tab.windowId;
+
+    if (
+      !windowsMap.has(
+        originalWindowId
+      )
+    ) {
       windowsMap.set(
         originalWindowId,
         []
@@ -406,28 +824,56 @@ async function restoreTabs(tabs, incognito = false) {
       .push(tab);
   }
 
+
   let restoredCount = 0;
 
-  // Cria uma nova janela para cada windowId original.
-  for (const [, windowTabs] of windowsMap) {
-    const count =
+  for (
+    const windowTabs
+    of windowsMap.values()
+  ) {
+    restoredCount +=
       await restoreSingleWindow(
         windowTabs,
         incognito
       );
-
-    restoredCount += count;
   }
 
   return restoredCount;
 }
+
+
+// ========================================
+// Eventos da interface
+// ========================================
+
+document
+  .getElementById("addIgnore")
+  .addEventListener(
+    "click",
+    addIgnoreHost
+  );
+
+
+// Enter também adiciona domínio.
+document
+  .getElementById("ignoreInput")
+  .addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Enter"
+      ) {
+        addIgnoreHost();
+      }
+    }
+  );
+
 
 document
   .getElementById("restore")
   .addEventListener(
     "click",
     async () => {
-
       const input =
         document.getElementById(
           "backupFile"
@@ -437,17 +883,14 @@ document
         input.files[0];
 
       if (!file) {
-
         setStatus(
           "Selecione um arquivo."
         );
 
         return;
-
       }
 
       try {
-
         setStatus(
           "Lendo backup..."
         );
@@ -480,14 +923,18 @@ document
         );
 
       } catch (error) {
-
-        console.error(error);
+        console.error(
+          "Erro ao restaurar:",
+          error
+        );
 
         setStatus(
           `Erro: ${error.message}`
         );
-
       }
-
     }
   );
+
+
+// Inicializa a interface.
+renderIgnoreList();
