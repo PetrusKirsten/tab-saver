@@ -14,11 +14,11 @@ A lightweight Chrome extension for saving, exporting and restoring tab sessions.
 
 ## Roadmap
 
-- Current window / all windows selection
-- Configurable ignore list
-- Named tab layouts
-- Session presets
-- Stable v1.0.0 release
+- [X] Current window / all windows selection
+- [X] Configurable ignore list
+- [ ] Named tab layouts
+- [ ] Session presets
+- [ ] Stable v1.0.0 release
 
 ## Status
 
